@@ -6,6 +6,10 @@ Requisitos:
  -Manejar errores con bloques try-except para validar entradas y gestionar excepciones.
  -Persistir los datos en archivo JSON."""
 
+
+import mysql.connector 
+from mysql.connector import Error 
+from decouple import config
 import json
 class Producto:
     def __init__(self, codbarra, nombre, precio, cant_stock, color, garantia):
@@ -57,7 +61,7 @@ class Producto:
             stock_nuevo = int(cant_stock)
             if stock_nuevo < 0 :
                 raise ValueError('El cantidad en stock no puede ser negativo')
-            return cant_stock
+            return stock_nuevo
         except ValueError:
             raise ValueError('El cantidad en stock no valido')
     
@@ -77,15 +81,15 @@ class Producto:
 
     def to_dict(self):
         return {
-            "Codigo de barra": self.codbarra,
-            "Nombre ": self.nombre,
-            "Precio ": self.precio,
-            "Cantidad en Stock ": self.cant_stock,
-            "Color ": self.color,
-            "Garantia ": self.garantia
+            "codbarra": self.codbarra,
+            "nombre": self.nombre,
+            "precio": self.precio,
+            "cant_stock": self.cant_stock,
+            "color": self.color,
+            "garantia": self.garantia
         }
 
-    def __srt__(self):
+    def __str__(self):
         return f"{self.codbarra} {self.nombre}"
     
 
@@ -113,11 +117,11 @@ class ProductoElectronico(Producto):
         
     def to_dict(self):
         data = super().to_dict()
-        data["consumo en Kw"]  = self.consumoKw
+        data["consumoKw"]  = self.consumoKw
         return data
-    
+
     def __str__(self):
-        return f"{super().__str__()} - Consumo Kw: {self.consumoKw}"
+        return f"{super().__str__()} - consumoKw: {self.consumoKw}"
     
 class ProductoAlimenticio(Producto):
     def __init__(self, codbarra, nombre, precio, cant_stock, color, garantia, fecha_vencimiento):
@@ -141,19 +145,43 @@ class ProductoAlimenticio(Producto):
         except ValueError:
             raise ValueError('Fecha ingresada erronea, error de {error}')
         
-    def to_dict(self):
+    def to_dict(self): 
         data = super().to_dict()
-        data['Fecha de Vencimiento']  = self.fecha_vencimiento
+        data['fecha_vencimiento']  = self.fecha_vencimiento
         return data
     
     def __str__(self):
-        return f"{super().__str__()} - Fecha de Vencimiento : {self.fecha_vencimiento}"
+        return f"{super().__str__()} - fecha_vencimiento : {self.fecha_vencimiento}"
     
 
 class GestionarProductos:
-    def __init__(self, archivo):
-        self.archivo = archivo
-    
+    def __init__(self):
+        self.host = config('DB_HOST')
+        self.database = config('DB_NAME')
+        self.user = config('DB_USER')
+        self.password= config('DB_PASSWORD')
+        self.port = config('DB_PORT') 
+
+    def connect(self):
+        '''establecer una conexion con la base de datos'''
+        try:
+            connection = mysql.connector.connect(
+                host= self.host,
+                database= self.database,
+                user= self.user,
+                password= self.password,
+                port= self.port
+            )
+            if connection.is_connected():
+                return connection
+            
+        except Error as e:
+            print(f'Error al conectar la base de datos: {e}')
+            return None
+  ####
+
+
+
     def leer_datos(self):
         try:
             with open(self.archivo, 'r') as file:
@@ -173,57 +201,164 @@ class GestionarProductos:
             print(f'Error al guardar datos en {self.archivo}: {error}')
         except Exception as error:
             print(f'Error de...: {error}') 
-
+ #####
     def crear_producto(self, producto):
         try:
-            datos = self.leer_datos() 
-            codbarra = producto.codbarra
-            if not str(codbarra) in datos.keys():
-                datos[codbarra] = producto.to_dict()
-                self.guardar_datos(datos)
-                print(f"Se guardaron los datos del nuevo producto {codbarra} de nombre {self.nombre }")
-            else: 
-                print(f'Producto {self.producto} ya existe')
+            connection = self.connect()
+            if connection:
+                with connection.cursor() as cursor:  #permite aplicar comandos en la base
+                    # Verificar si el cod de barra ya existe
+                    cursor.execute('SELECT codbarra FROM productos WHERE codbarra = %s', (producto.codbarra,))
+                    if cursor.fetchone():
+                        print(f'Error: ya existe un Producto con el CODBARRA {producto.codbarra}')
+                        return
+                                    
+                    #Insertar producto dependiendo del tipo
+                    if isinstance(producto, ProductoElectronico):
+                        query = '''
+                        INSERT INTO productos (codbarra, nombre, precio, cant_stock, color, garantia) 
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        '''
+                        cursor.execute(query, (producto.codbarra, producto.nombre, producto.precio, producto.cant_stock, producto.color, producto.garantia)) 
+                       
+                        query = ''' 
+                         INSERT INTO productoElectronico (codbarra, consumoKw )
+                         VALUES (%s, %s)
+                         '''
+                        cursor.execute(query, (producto.codbarra, producto.consumoKw ))
+                    elif isinstance(producto, ProductoAlimenticio):
+                        query = '''
+                        INSERT INTO productos (codbarra, nombre, precio, cant_stock, color, garantia) 
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        '''
+                        cursor.execute(query, (producto.codbarra, producto.nombre, producto.precio, producto.cant_stock, producto.color, producto.garantia)) 
+                       
+                        query = ''' 
+                         INSERT INTO productoAlimenticio (codbarra, fecha_vencimiento )
+                         VALUES (%s, %s)
+                         '''
+                        cursor.execute(query, (producto.codbarra, producto.fecha_vencimiento ))
+
+                    connection.commit()
+                    print(f'Producto {producto.nombre} creado con exito!')
+
         except Exception as error:
                 print(f'Error inesperado al crear Producto: {error}')
 
     def leer_producto(self, codbarra):
         try:
-            datos = self.leer_datos()
-            if (codbarra) in datos:
-                producto_dato = datos[codbarra]
-                if 'consumoKm' in producto_dato:
-                    producto = ProductoElectronico(**producto_dato) 
-                else:
-                    producto = ProductoAlimenticio(**producto_dato)
-                print(f'Producto con Cod. de barra {codbarra} econtrado')
-            else: print(f'No se encontro producto con el codigo de barra {codbarra}')
-        except Exception as e:
-            print(f'Error al leer producto: {e}')
+            connection = self.connect()
+            if connection:
+                with connection.cursor(dictionary=True) as cursor:
+                    cursor.execute('SELECT * FROM productos WHERE codbarra = %s', (codbarra,))
+                    producto_data = cursor.fetchone()
+                  
+                    if producto_data:
+                        cursor.execute('SELECT consumoKw FROM productoelectronico WHERE codbarra = %s', (codbarra, ))
+                        consumoKw = cursor.fetchone()
+                        if consumoKw: 
+                            producto_data['consumoKw'] = consumoKw['consumoKw']
+                            producto = ProductoElectronico(**producto_data)
+                        else: 
+                            cursor.execute('SELECT fecha_vencimiento FROM productoalimenticio WHERE codbarra = %s', (codbarra,))
+                            fecha_vencimiento = cursor.fetchone()
+                            if fecha_vencimiento:
+                                producto_data['fecha_vencimiento'] = fecha_vencimiento ['fecha_vencimiento']
+                                producto = ProductoAlimenticio(**producto_data)
+                            else: 
+                                producto = Producto(**producto_data)
+                        print(f'Producto encontrado: {producto}') 
+            else:
+                print(f'No se encontró producto con el cod de barra {codbarra}')
+       
+        except Error as e:
+            print('Error al leer producto: {e}')
+        finally: 
+            if connection.is_connected():
+                connection.close()
 
 
 
     def actualizar_producto(self, codbarra, precio_nuevo):
         try:
-            datos = self.leer_datos()
-            if str(codbarra) in datos.keys():
-                datos[codbarra]['precio']  = precio_nuevo 
-                self.guardar_datos(datos) 
-                print(f' Precio del Producto Actualizado correctamente ')
-            else: print(f' No se encontro producto con el cod Barra {codbarra} ')
+            connection = self.connect()
+            if connection:
+                with connection.cursor() as cursor:
+                    cursor.execute('SELECT * FROM productos WHERE codbarra = %s', (codbarra,))
+                    if not cursor.fetchone():
+                        print(f'No se encontro el producto con el codBarra ingresado {codbarra}')
+                        return
+                    
+                    cursor.execute('UPDATE productos SET precio = %s WHERE codbarra = %s', (precio_nuevo, codbarra))
+                    if cursor.rowcount > 0:   #cuenta las filas
+                        connection.commit()
+                        print(f'El precio del producto indicado se ah actualizado {codbarra}')
+                    else:
+                        print(f'El precio del producto indicado no se encontró {codbarra}')
         except Exception as e:
-            print(f' Error al actualizar producto')
+            print(f' Error al actualizar producto: {e}')
+        finally: 
+            if connection.is_connected():
+                connection.close()
+    
 
 
     def eliminar_producto(self, codbarra):
         try:
-            datos = self.leer_datos()
-            if str(codbarra) in datos.keys():
-                del datos[codbarra]
-                self.guardar_datos(datos)
-                print(f' Producto eliminado correctamente ')
-            else: print(f' No se encontro producto con el cod Barra {codbarra} ')
+            connection = self.connect()
+            if connection:
+                with connection.cursor() as cursor:
+                    cursor.execute('SELECT * FROM productos WHERE codbarra = %s', (codbarra,))
+                    if not cursor.fetchone():
+                        print(f'No se encontro el producto con el codigo de barra {codbarra}')
+                        return
+                    
+                    cursor.execute('DELETE FROM productoalimenticio WHERE codbarra = %s', (codbarra,))
+                    cursor.execute('DELETE FROM productoelectronico WHERE codbarra = %s', (codbarra,))
+                    cursor.execute('DELETE FROM productos WHERE codbarra = %s', (codbarra,))
+                    if cursor.rowcount > 0:
+                        connection.commit()
+                        print(f'El producto se ELIMINÓ correctamente. Su codigo de barra {codbarra}')
+                    else: 
+                        print(f'No se encontro el producto {codbarra}')
         except Exception as e:
             print(f' Error al eliminar producto')
+        finally: 
+            if connection.is_connected():
+                connection.close()
+
+
+    def leer_todos_productos(self):
+        try:
+            connection = self.connect()
+            if connection:
+                with connection.cursor(dictionary=True) as cursor:
+                    cursor.execute('SELECT * FROM productos')
+                    productos_data = cursor.fetchall()
+
+                    productos = []
+
+                    for producto_data in productos_data:
+                        codbarra = producto_data['codbarra']
+
+                        cursor.execute('SELECT consumoKw FROM productoelectronico WHERE codbarra = %s', (codbarra,))
+                        consumoKw = cursor.fetchone()
+                        if consumoKw:
+                            producto_data['consumoKw'] = consumoKw['consumoKw'] 
+                            producto = ProductoElectronico(**producto_data)
+                        else:
+                            cursor.execute('SELECT fecha_vencimiento FROM  productoalimenticio WHERE codbarra = %s', (codbarra,))
+                            fecha_vencimiento = cursor.fetchone()
+                            producto_data['fecha_vencimiento'] = fecha_vencimiento['fecha_vencimiento']
+                            producto = ProductoAlimenticio(**producto_data)
+
+                        productos.append(producto)  
+
+        except Exception as e:
+            print(f'Error al buscar productos {e}')
+        else: return productos
+        finally:
+              if connection.is_connected():
+                connection.close()
 
 

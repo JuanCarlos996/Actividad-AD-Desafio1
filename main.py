@@ -1,7 +1,7 @@
 import os
 import platform
 from desafio1 import ProductoElectronico
-from desafio1 import ProductoAlimenticio
+from desafio1 import ProductoAlimenticio 
 from desafio1 import Producto
 from desafio1 import GestionarProductos
 
@@ -15,7 +15,7 @@ def limpiar_pantalla():
 
 
 def mostrar_menu():
-    print(" -------Menú principal para gestion de Productos-------------")
+    print(" ----------Menú principal para gestion de Productos-------------")
     print(' 1- Agregar producto Electronico ')
     print(' 2- Agregar producto alimenticio ')
     print(' 3- Buscar producto por Codigo de barra ')
@@ -54,10 +54,10 @@ def agregar_producto(gestion, tipo_producto):
         print(f'Error inesperado: {e}')
 
 def buscar_producto_por_codbarra(gestion):
-    codbarra = int(input ('Ingrese codigo de barra a buscar '))
+    codbarra = input('Ingrese codigo de barra a buscar ')
     gestion.leer_producto(codbarra)
-    input('Presione enter para continuar...')
-
+    input('Presione enter para continuar...') 
+ 
 def actualizar_precio_producto(gestion):
     codbarra = input('Ingrese el codigo de barra a actualizar  ')
     precio= float(input('Ingrese el nuevo precio del producto  '))
@@ -72,23 +72,26 @@ def eliminar_producto(gestion):
 
 def mostrar_los_productos(gestion):
     print('--------------Listado de Productos----------------')
-    for producto in gestion.leer_datos().values():
-        if 'consumoKw' in producto:
-            print(f"{producto['nombre']} - Consumo Kw {producto['consumoKw']}")
-        else:
-            print(f"{producto['nombre']} - Fecha de Vencimiento {producto['fecha_vencimiento']}")
+    try:
+        productos = gestion.leer_todos_productos()
+        for producto in productos:
+            if isinstance(producto, ProductoElectronico):
+                print(f'{producto.codbarra} {producto.nombre} {producto.consumoKw}')
+            elif isinstance(producto, ProductoAlimenticio):
+                print(f'{producto.codbarra} {producto.nombre} {producto.fecha_vencimiento}')
+
+    except Exception as e:
+        print(f'Error al mostrar {e}')  
+    
+    print('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
     input('Presione enter para continuar...')
 
 
 
 
 
-
-
-
 if __name__ == "__main__":
-    archivo_producto = 'Productos_base.json'
-    gestion = GestionarProductos(archivo_producto)
+    gestion = GestionarProductos()
 
     while True:
         limpiar_pantalla()
